@@ -38,6 +38,7 @@ class MealPlanSensor(SensorEntity):
         self.meals = None
         self.revision = 0
         self.last_received_at = None
+        self.snapshot_source = "unknown"
         self.error = None
         self.pending = False
         self.uncertain = False
@@ -66,6 +67,7 @@ class MealPlanSensor(SensorEntity):
                     raise ValueError("Invalid stored metadata")
                 self.raw, self.meals = saved["raw"], meals
                 self.revision, self.last_received_at = revision, timestamp
+                self.snapshot_source = "restored"
                 self.error = saved.get("error")
                 self.uncertain = bool(saved.get("uncertain", False))
             except (KeyError, TypeError, ValueError):
@@ -108,6 +110,7 @@ class MealPlanSensor(SensorEntity):
         raw = data.get("value")
         self.revision += 1
         self.last_received_at = event.time_fired.isoformat()
+        self.snapshot_source = "received"
         try:
             meals = decode(raw)
         except ValueError:
@@ -143,9 +146,12 @@ class MealPlanSensor(SensorEntity):
             "revision": self.revision,
             "last_received_at": self.last_received_at,
             "observation_kind": OBSERVATION_KIND,
+            "snapshot_source": self.snapshot_source,
+            "schedule_valid": self.meals is not None,
             "pending": self.pending,
             "error": self.error,
             "supports_schedule_write": self.meals is not None
+            and self.snapshot_source == "received"
             and not self.uncertain
             and can_send(self.hass, self.entry, self.audited),
             "supported_days_mode": "every_day",
@@ -168,6 +174,7 @@ class MealPlanSensor(SensorEntity):
             )
         if (
             self.meals is None
+            or self.snapshot_source != "received"
             or self.uncertain
             or not can_send(self.hass, self.entry, self.audited)
         ):

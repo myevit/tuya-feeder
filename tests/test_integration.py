@@ -301,6 +301,26 @@ async def test_restore_after_real_config_entry_reload(hass, feeder):
     assert restored.extra_state_attributes["supports_schedule_write"]
 
 
+async def test_restored_valid_snapshot_requires_new_local_receipt(hass, feeder):
+    from custom_components.tuya_feeder.sensor import MealPlanSensor
+
+    sensor, entry, transport, _ = feeder
+    await report(hass)
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    restored = MealPlanSensor(hass, entry, True)
+    await restored.start()
+    assert not restored.extra_state_attributes["supports_schedule_write"]
+    assert restored.extra_state_attributes["schedule_valid"]
+    assert restored.extra_state_attributes["snapshot_source"] == "restored"
+    with pytest.raises(HomeAssistantError):
+        await restored.set_schedule(restored.revision, CHANGED)
+    transport.assert_not_called()
+    await report(hass)
+    assert restored.extra_state_attributes["snapshot_source"] == "received"
+    assert restored.extra_state_attributes["supports_schedule_write"]
+    await restored.stop()
+
+
 async def test_wrong_dp_incompatible_runtime_and_disconnected(hass, feeder):
     sensor, _, transport, device = feeder
     hass.bus.async_fire(

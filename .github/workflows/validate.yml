@@ -32,3 +32,26 @@ jobs:
         with:
           category: integration
           ignore: brands
+  card-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7.0.1
+        with:
+          repository: myevit/tuya-feeder-card
+          ref: main
+          path: .contract-card
+      - uses: actions/setup-python@v7.0.0
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: pip install -r requirements_test.txt
+      - run: npm ci && npm run build && npx playwright install --with-deps chromium
+        working-directory: .contract-card
+      - run: git rev-parse HEAD && git -C .contract-card rev-parse HEAD
+      - run: pytest -q tests/test_card_contract.py
+        env:
+          TUYA_FEEDER_CARD_DIR: ${{ github.workspace }}/.contract-card

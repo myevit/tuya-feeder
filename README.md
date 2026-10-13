@@ -30,17 +30,19 @@ Manual installation: copy **only** `custom_components/tuya_feeder` into your HA 
 
 ## Sensor/API contract
 
-Domain: `tuya_feeder`. The sensor state is meal count or `unknown`, never a claim that the feeder is currently executing a schedule. It is nonpolling and restores its own private `.storage` snapshot.
+Domain: `tuya_feeder`. The sensor state is meal count or `unknown`, never a claim that the feeder is currently executing a schedule. It is nonpolling and restores its own private `.storage` snapshot. Restored snapshots remain read only until a new genuine valid local report arrives, even when their saved timestamp looks recent. Use integration and card **v0.1.1 or newer together**.
 
 | Attribute | Meaning |
 | --- | --- |
 | `meals` | Complete list of `{days, time, portions, enabled}`; `[]` if unknown, distinguish with unknown state/support flag |
 | `revision` | Integer observation revision; increases on every accepted DP1 report, even identical or malformed reports |
 | `last_received_at` | ISO timestamp of the last accepted device report, **not** a GET or write time |
-| `observation_kind` | Explicit last-locally-reported snapshot warning |
+| `observation_kind` | Explicit last-locally-reported snapshot warning; never relabeled as an active query or `confirmed` |
+| `schedule_valid` | Entire snapshot passed the strict daily DP1 decoder, including known-empty reports |
+| `snapshot_source` | `received` for a genuine report in this runtime; `restored` for saved historical data; `unknown` before either |
 | `pending` | A single write is reserved/in progress |
 | `error` | `null` or an explicit validation/report/confirmation error |
-| `supports_schedule_write` | Known supported snapshot, compatible connected transport, no unresolved write uncertainty |
+| `supports_schedule_write` | Known supported snapshot received in this runtime, compatible connected transport, no unresolved write uncertainty |
 | `supported_days_mode` | `every_day` |
 | `max_meals` / `max_portions` | `10` / `60` |
 | `warning` | External-app stale-cache limitation |
