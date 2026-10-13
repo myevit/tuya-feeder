@@ -53,7 +53,8 @@ class MealPlanSensor(SensorEntity):
         saved = await self.store.async_load()
         if saved is not None:
             try:
-                meals = decode(saved["raw"])
+                # Malformed reports retain metadata but never their raw payload.
+                meals = decode(saved["raw"]) if saved["raw"] is not None else None
                 revision = saved["revision"]
                 timestamp = saved["last_received_at"]
                 if (
@@ -76,7 +77,7 @@ class MealPlanSensor(SensorEntity):
     async def save(self):
         """Serialize disk saves so the last report wins even during a write."""
         async with self._save_lock:
-            if self.raw is None:
+            if self.revision < 1:
                 await self.store.async_remove()
             else:
                 await self.store.async_save(

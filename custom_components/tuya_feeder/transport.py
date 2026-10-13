@@ -42,10 +42,13 @@ async def audited_transport(hass):
 def genuine_reports_allowed(hass, entry, audited):
     """Write-only runtimes synthesize status_updated; their events are unsafe."""
     device = runtime_device(hass, entry)
+    # Audited property is `is_subdevice and ...`; direct Wi-Fi returns
+    # None or an empty node ID, not necessarily the literal False.
+    write_only = getattr(device, "is_write_only", True)
     return (
         audited
         and device is not None
-        and getattr(device, "is_write_only", True) is False
+        and (write_only is False or write_only is None or write_only == "")
     )
 
 

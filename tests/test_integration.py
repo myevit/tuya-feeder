@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import SupportsResponse
 from homeassistant.exceptions import HomeAssistantError
 from pytest_homeassistant_custom_component.common import (
@@ -36,6 +37,7 @@ async def feeder(hass):
     )
     local = MockConfigEntry(
         domain="localtuya",
+        state=ConfigEntryState.LOADED,
         data={
             "devices": {
                 DEVICE: {"friendly_name": "Synthetic feeder", "host": "synthetic_host"}
@@ -427,6 +429,25 @@ async def test_invalid_storage_cannot_become_writable(hass, feeder):
     transport.assert_not_called()
 
 
+async def test_malformed_report_metadata_survives_restore(hass, feeder):
+    from custom_components.tuya_feeder.sensor import MealPlanSensor
+
+    sensor, entry, transport, _ = feeder
+    await report(hass)
+    await report(hass, raw="AA==")
+    timestamp = sensor.last_received_at
+    assert sensor.revision == 2
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    restored = MealPlanSensor(hass, entry, True)
+    await restored.start()
+    assert restored.revision == 2
+    assert restored.last_received_at == timestamp
+    assert restored.error == "unsupported_or_malformed_report"
+    assert restored.meals is None
+    await restored.stop()
+    transport.assert_not_called()
+
+
 async def test_transport_audit_requires_exact_version_and_origin(hass):
     from custom_components.tuya_feeder.transport import audited_transport
 
@@ -443,3 +464,21 @@ async def test_transport_audit_requires_exact_version_and_origin(hass):
             AsyncMock(return_value=SimpleNamespace(manifest=manifest)),
         ):
             assert not await audited_transport(hass)
+
+
+@pytest.mark.parametrize("write_only_value", [None, ""])
+async def test_audited_wifi_falsey_write_only_property(hass, feeder, write_only_value):
+    sensor, _, transport, device = feeder
+    device.is_write_only = write_only_value
+    await report(hass)
+    assert sensor.meals == BASE
+    assert sensor.extra_state_attributes["supports_schedule_write"]
+    transport.assert_not_called()
+
+
+async def test_missing_write_only_property_fails_closed(hass, feeder):
+    sensor, _, transport, device = feeder
+    del device.is_write_only
+    await report(hass)
+    assert sensor.meals is None
+    transport.assert_not_called()
