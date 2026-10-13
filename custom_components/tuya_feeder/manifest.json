@@ -1,0 +1,13 @@
+{
+  "domain": "tuya_feeder",
+  "name": "Tuya Feeder",
+  "codeowners": ["@myevit"],
+  "config_flow": true,
+  "dependencies": ["localtuya"],
+  "documentation": "https://github.com/myevit/tuya-feeder",
+  "integration_type": "device",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/myevit/tuya-feeder/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

@@ -1,0 +1,19 @@
+set_schedule:
+  fields:
+    entity_id:
+      required: true
+      selector:
+        entity:
+          integration: tuya_feeder
+          domain: sensor
+    expected_revision:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 2147483647
+          mode: box
+    meals:
+      required: true
+      selector:
+        object:

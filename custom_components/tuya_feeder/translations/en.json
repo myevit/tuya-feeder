@@ -1,0 +1,27 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Select an existing FT-11W feeder",
+        "description": "Select the FT-11W already configured in LocalTuya. This integration uses its existing LAN connection. Only audited xZetsubou LocalTuya 2026.07.0 non-write-only transports can capture reports or write schedules. No query can guarantee a fresh DP1 schedule; an unknown plan cannot be edited.",
+        "data": {"device_id": "LocalTuya device"}
+      }
+    },
+    "error": {"device_missing": "The selected LocalTuya device no longer exists."},
+    "abort": {
+      "no_devices": "Configure your FT-11W in LocalTuya first.",
+      "already_configured": "This feeder is already configured."
+    }
+  },
+  "services": {
+    "set_schedule": {
+      "name": "Set complete schedule",
+      "description": "Replace DP1 with a validated every-day plan. Existing meals must all be included. Sends once, waits for a matching locally received DP1 report, and never retries automatically. Does not dispense food immediately.",
+      "fields": {
+        "entity_id": {"name": "Meal-plan sensor", "description": "One loaded Tuya Feeder sensor."},
+        "expected_revision": {"name": "Expected revision", "description": "Use the exact integer revision from the last reported snapshot."},
+        "meals": {"name": "Complete meals", "description": "List of records containing days (all seven lowercase weekdays), time (HH:MM), portions (integer 1–60), enabled (boolean). Maximum ten records, including disabled meals."}
+      }
+    }
+  }
+}
