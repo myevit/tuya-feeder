@@ -3,9 +3,10 @@
 import asyncio
 from copy import deepcopy
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.core import callback
 from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
@@ -18,7 +19,31 @@ OBSERVATION_KIND = "last locally reported snapshot; not an active schedule query
 
 async def async_setup_entry(hass, entry, async_add_entities):
     """Add the already-subscribed entity."""
-    async_add_entities([hass.data["tuya_feeder"][entry.entry_id]])
+    plan = hass.data["tuya_feeder"][entry.entry_id]
+    plan.last_feed_sensor = LastFeedSensor(plan)
+    async_add_entities([plan, plan.last_feed_sensor])
+
+
+class LastFeedSensor(SensorEntity):
+    """Device-page timestamp of observed feeding start, not completion."""
+
+    _attr_should_poll = False
+    _attr_has_entity_name = True
+    _attr_name = "Last feed"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    def __init__(self, plan):
+        self.plan = plan
+        self._attr_unique_id = f"{plan.entry.unique_id}_last_feed"
+
+    @property
+    def device_info(self):
+        return self.plan.device_info
+
+    @property
+    def native_value(self):
+        timestamp = self.plan.manual.last_feed_at
+        return dt_util.parse_datetime(timestamp) if timestamp else None
 
 
 class MealPlanSensor(SensorEntity):
@@ -111,6 +136,16 @@ class MealPlanSensor(SensorEntity):
     def _publish(self):
         if self.entity_id is not None:
             self.async_write_ha_state()
+        last_feed = getattr(self, "last_feed_sensor", None)
+        if last_feed is not None and last_feed.entity_id is not None:
+            last_feed.async_write_ha_state()
+
+    @property
+    def device_info(self):
+        # Match the audited LocalTuya physical device without changing its metadata.
+        return DeviceInfo(
+            identifiers={("localtuya", f"local_{self.entry.data['device_id']}")}
+        )
 
     async def import_snapshot(self, source_entity_id):
         """Import explicitly selected passive historical data, never a receipt.

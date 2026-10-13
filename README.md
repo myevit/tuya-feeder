@@ -84,6 +84,10 @@ Timeout or transport failure returns `confirmed: false` with `unconfirmed_timeou
 
 Invalid data, stale revision, unavailable/incompatible transport, wrong entity, pending operation, unknown snapshot, or uncertainty raises a service validation error and performs **no write**. Booleans are not accepted as integers. No coercion from numeric strings, loose times, or truthy enabled values occurs.
 
+## Native device-page Last feed sensor (v0.2.2)
+
+A normal Home Assistant `Last feed` timestamp sensor is linked to the existing LocalTuya physical feeder device, alongside the meal-plan sensor. It is available on the device's Sensors panel and for automations/history. Its per-device unique ID ends in `_last_feed`; it shares the same persisted `last_feed_at` source as the card subtitle, not another tracker. Home Assistant displays timestamp states at second precision. Unknown remains unknown until genuine feeding activity is observed; restore, GET, reconnection, schedule times and service acknowledgements never manufacture history. The timestamp records **feeding start observed locally**, not proof of completed dispensing.
+
 ## Passive last feeding activity (v0.2.1)
 
 `last_feed_at` is a persisted timezone-aware receipt timestamp for the latest observed genuine local DP4 inactive→`feeding` transition, independent of command origin. `last_feed_source` is `local_dp4_feeding_edge`, or null when unknown. Scheduled, physical-button, app and HA feeding all share this local device activity channel; no extra socket, cloud query or actuation is introduced.
