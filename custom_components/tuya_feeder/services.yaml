@@ -17,3 +17,20 @@ set_schedule:
       required: true
       selector:
         object:
+    acknowledge_restored_snapshot:
+      required: false
+      selector:
+        boolean:
+import_snapshot:
+  fields:
+    entity_id:
+      required: true
+      selector:
+        entity:
+          integration: tuya_feeder
+          domain: sensor
+    source_entity_id:
+      required: true
+      selector:
+        entity:
+          domain: sensor

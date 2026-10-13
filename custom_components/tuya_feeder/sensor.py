@@ -39,6 +39,7 @@ class MealPlanSensor(SensorEntity):
         self.revision = 0
         self.last_received_at = None
         self.snapshot_source = "unknown"
+        self.imported_from = None
         self.error = None
         self.pending = False
         self.uncertain = False
@@ -58,11 +59,17 @@ class MealPlanSensor(SensorEntity):
                 meals = decode(saved["raw"]) if saved["raw"] is not None else None
                 revision = saved["revision"]
                 timestamp = saved["last_received_at"]
+                parsed = (
+                    dt_util.parse_datetime(timestamp)
+                    if type(timestamp) is str
+                    else None
+                )
                 if (
                     type(revision) is not int
                     or revision < 1
                     or type(timestamp) is not str
-                    or dt_util.parse_datetime(timestamp) is None
+                    or parsed is None
+                    or parsed.tzinfo is None
                 ):
                     raise ValueError("Invalid stored metadata")
                 self.raw, self.meals = saved["raw"], meals
@@ -70,6 +77,7 @@ class MealPlanSensor(SensorEntity):
                 self.snapshot_source = "restored"
                 self.error = saved.get("error")
                 self.uncertain = bool(saved.get("uncertain", False))
+                self.imported_from = saved.get("imported_from")
             except (KeyError, TypeError, ValueError):
                 self.error = "invalid_stored_snapshot"
         self._unsub = self.hass.bus.async_listen(
@@ -89,6 +97,7 @@ class MealPlanSensor(SensorEntity):
                         "last_received_at": self.last_received_at,
                         "error": self.error,
                         "uncertain": self.uncertain,
+                        "imported_from": self.imported_from,
                     }
                 )
 
@@ -96,6 +105,56 @@ class MealPlanSensor(SensorEntity):
     def _publish(self):
         if self.entity_id is not None:
             self.async_write_ha_state()
+
+    async def import_snapshot(self, source_entity_id):
+        """Import explicitly selected passive historical data, never a receipt.
+
+        HA attributes are user-trusted metadata, not cryptographic device proof.
+        Only a cold unknown baseline can be initialized; no unsafe state recovery.
+        """
+        if (
+            not source_entity_id.startswith("sensor.")
+            or source_entity_id == self.entity_id
+            or self.entry.options.get("historical_snapshot_entity_id")
+            != source_entity_id
+        ):
+            raise ServiceValidationError(
+                "Select this historical source in integration options first"
+            )
+        if self.pending or self.revision != 0 or self.uncertain or self.error:
+            raise ServiceValidationError(
+                "Import is only allowed for an empty initial snapshot"
+            )
+        state = self.hass.states.get(source_entity_id)
+        if state is None or state.state in ("unknown", "unavailable"):
+            raise ServiceValidationError("Historical source is unavailable")
+        attrs = state.attributes
+        timestamp = attrs.get("received_at")
+        parsed = (
+            dt_util.parse_datetime(timestamp) if isinstance(timestamp, str) else None
+        )
+        if (
+            attrs.get("source") != "LocalTuya LAN DP1 report"
+            or attrs.get("read_only") not in (True, "True")
+            or parsed is None
+            or parsed.tzinfo is None
+            or parsed > dt_util.utcnow()
+        ):
+            raise ServiceValidationError(
+                "Source must be a passive LAN DP1 snapshot with its original timezone-aware receipt timestamp"
+            )
+        raw = attrs.get("raw_plan")
+        try:
+            meals = decode(raw)
+        except ValueError as err:
+            raise ServiceValidationError(str(err)) from err
+        self.raw, self.meals = raw, meals
+        self.revision = 1
+        self.last_received_at = timestamp
+        self.snapshot_source = "restored"
+        self.imported_from = source_entity_id
+        await self.save()
+        self._publish()
 
     @callback
     def _received(self, event):
@@ -147,6 +206,14 @@ class MealPlanSensor(SensorEntity):
             "last_received_at": self.last_received_at,
             "observation_kind": OBSERVATION_KIND,
             "snapshot_source": self.snapshot_source,
+            "imported_from": self.imported_from,
+            "requires_restored_snapshot_acknowledgement": self.snapshot_source
+            == "restored",
+            "supports_restored_schedule_write": self.meals is not None
+            and self.snapshot_source == "restored"
+            and not self.uncertain
+            and not self.error
+            and can_send(self.hass, self.entry, self.audited),
             "schedule_valid": self.meals is not None,
             "pending": self.pending,
             "error": self.error,
@@ -160,7 +227,9 @@ class MealPlanSensor(SensorEntity):
             "warning": "Ordinary LAN GET omits DP1. External app changes may not be reported; revision only guards observed HA edits.",
         }
 
-    async def set_schedule(self, expected_revision, meals):
+    async def set_schedule(
+        self, expected_revision, meals, acknowledge_restored_snapshot=False
+    ):
         """One full-plan DP1 write, never retry or claim a sent value as received."""
         try:
             target = encode(meals)
@@ -174,8 +243,15 @@ class MealPlanSensor(SensorEntity):
             )
         if (
             self.meals is None
-            or self.snapshot_source != "received"
+            or not (
+                self.snapshot_source == "received"
+                or (
+                    self.snapshot_source == "restored"
+                    and acknowledge_restored_snapshot is True
+                )
+            )
             or self.uncertain
+            or self.error
             or not can_send(self.hass, self.entry, self.audited)
         ):
             raise ServiceValidationError(

@@ -4,10 +4,14 @@
       "user": {
         "title": "Select an existing FT-11W feeder",
         "description": "Select the FT-11W already configured in LocalTuya. This integration uses its existing LAN connection. Only audited xZetsubou LocalTuya 2026.07.0 non-write-only transports can capture reports or write schedules. No query can guarantee a fresh DP1 schedule; an unknown plan cannot be edited.",
-        "data": {"device_id": "LocalTuya device"}
+        "data": {
+          "device_id": "LocalTuya device"
+        }
       }
     },
-    "error": {"device_missing": "The selected LocalTuya device no longer exists."},
+    "error": {
+      "device_missing": "The selected LocalTuya device no longer exists."
+    },
     "abort": {
       "no_devices": "Configure your FT-11W in LocalTuya first.",
       "already_configured": "This feeder is already configured."
@@ -18,10 +22,51 @@
       "name": "Set complete schedule",
       "description": "Replace DP1 with a validated every-day plan. Existing meals must all be included. Sends once, waits for a matching locally received DP1 report, and never retries automatically. Does not dispense food immediately.",
       "fields": {
-        "entity_id": {"name": "Meal-plan sensor", "description": "One loaded Tuya Feeder sensor."},
-        "expected_revision": {"name": "Expected revision", "description": "Use the exact integer revision from the last reported snapshot."},
-        "meals": {"name": "Complete meals", "description": "List of records containing days (all seven lowercase weekdays), time (HH:MM), portions (integer 1–60), enabled (boolean). Maximum ten records, including disabled meals."}
+        "entity_id": {
+          "name": "Meal-plan sensor",
+          "description": "One loaded Tuya Feeder sensor."
+        },
+        "expected_revision": {
+          "name": "Expected revision",
+          "description": "Use the exact integer revision from the last reported snapshot."
+        },
+        "meals": {
+          "name": "Complete meals",
+          "description": "List of records containing days (all seven lowercase weekdays), time (HH:MM), portions (integer 1\u201360), enabled (boolean). Maximum ten records, including disabled meals."
+        },
+        "acknowledge_restored_snapshot": {
+          "name": "Accept saved historical baseline",
+          "description": "Strict boolean true explicitly permits this one write from a valid saved snapshot at the expected revision. External app changes could be overwritten. A new genuine LAN report is still required to confirm."
+        }
       }
+    },
+    "import_snapshot": {
+      "name": "Import snapshot",
+      "description": "Initialize an empty meal-plan sensor from the passive sensor selected in options. Preserves the original received_at and records restored provenance. No feeder calls, events or cloud queries. Administrator only.",
+      "fields": {
+        "entity_id": {
+          "name": "Meal-plan sensor",
+          "description": "One empty loaded Tuya Feeder sensor."
+        },
+        "source_entity_id": {
+          "name": "Trusted historical sensor",
+          "description": "Must match the manually selected integration option and contain valid every-day raw_plan, original timezone-aware received_at, read_only and LAN DP1 source metadata."
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Historical snapshot source",
+        "description": "Optionally select a passive LAN DP1 sensor whose original raw_plan and received_at you trust. HA metadata is not cryptographic device proof. Selection sends nothing and imports nothing. Use Import snapshot explicitly to initialize an empty sensor. Historical editing requires explicit overwrite confirmation. Clear the selection to revoke future imports.",
+        "data": {
+          "historical_snapshot_entity_id": "Trusted historical sensor"
+        }
+      }
+    },
+    "error": {
+      "invalid_snapshot_source": "Select an existing read-only sensor with source LocalTuya LAN DP1 report."
     }
   }
 }

@@ -122,6 +122,7 @@ async def test_actual_states_fail_closed(hass, feeder, browser_bridge, case):
         sensor = MealPlanSensor(hass, entry, True)
         await sensor.start()
         sensor.entity_id = "sensor.synthetic_restored"
+        sensor.uncertain = True  # Unsafe historical snapshots remain non-editable.
         sensor._publish()
     elif case == "corrupt":
         await report(hass, raw="AA==")
@@ -166,4 +167,96 @@ async def test_actual_edit_conflict(hass, feeder, browser_bridge):
     await report(hass, CHANGED)
     await browser_bridge("state", state=state(hass, sensor))
     assert await browser_bridge("conflict") == []
+    transport.assert_not_called()
+
+
+async def test_imported_baseline_card_to_actual_service_contract(
+    hass, feeder, browser_bridge
+):
+    from test_snapshot_import import STAMP, import_saved
+
+    sensor, entry, transport, _ = feeder
+    sensor.confirm_timeout = 10
+    await browser_bridge("init", state=state(hass, sensor))
+    await browser_bridge("readonly")
+    await import_saved(hass, sensor, entry)
+    initial = state(hass, sensor)
+    assert initial["attributes"]["snapshot_source"] == "restored"
+    assert initial["attributes"]["last_received_at"] == STAMP
+    await browser_bridge("state", state=initial)
+    await browser_bridge("editable")
+    assert await browser_bridge("draft_actions", count=1) == []
+    transport.assert_not_called()
+    calls = await browser_bridge("save")
+    assert calls == [
+        [
+            "tuya_feeder",
+            "set_schedule",
+            {
+                "entity_id": sensor.entity_id,
+                "expected_revision": 1,
+                "meals": CHANGED,
+                "acknowledge_restored_snapshot": True,
+            },
+        ]
+    ]
+    await browser_bridge("busy")
+
+    async def receive(call):
+        assert call.data["value"] == encode(CHANGED)
+        await report(hass, CHANGED)
+        await browser_bridge("state", state=state(hass, sensor))
+        await browser_bridge("busy")
+
+    transport.side_effect = receive
+    result = await hass.services.async_call(
+        *calls[0][:2], calls[0][2], blocking=True, return_response=True
+    )
+    assert result["confirmed"]
+    final = state(hass, sensor)
+    assert final["attributes"]["snapshot_source"] == "received"
+    assert final["attributes"]["last_received_at"] != STAMP
+    await browser_bridge("state", state=final)
+    await browser_bridge("confirmed")
+    transport.assert_called_once()
+
+
+async def test_four_imported_rows_render_without_services(hass, feeder, browser_bridge):
+    from test_snapshot_import import SOURCE, STAMP
+
+    from custom_components.tuya_feeder.plan import DAYS
+
+    sensor, entry, transport, _ = feeder
+    synthetic = [
+        {"days": list(DAYS), "time": time, "portions": portions, "enabled": enabled}
+        for time, portions, enabled in [
+            ("05:42", 3, True),
+            ("11:16", 4, True),
+            ("18:23", 2, True),
+            ("22:48", 1, False),
+        ]
+    ]
+    hass.config_entries.async_update_entry(
+        entry, options={"historical_snapshot_entity_id": SOURCE}
+    )
+    hass.states.async_set(
+        SOURCE,
+        "4",
+        {
+            "raw_plan": encode(synthetic),
+            "received_at": STAMP,
+            "source": "LocalTuya LAN DP1 report",
+            "read_only": True,
+        },
+    )
+    await hass.services.async_call(
+        "tuya_feeder",
+        "import_snapshot",
+        {"entity_id": sensor.entity_id, "source_entity_id": SOURCE},
+        blocking=True,
+    )
+    await browser_bridge("init", state=state(hass, sensor))
+    assert await browser_bridge("draft_actions", count=4) == []
+    assert sensor.meals == synthetic
+    assert sensor.last_received_at == STAMP
     transport.assert_not_called()

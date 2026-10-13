@@ -16,6 +16,12 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 PLATFORMS = [Platform.SENSOR]
 
 
+def strict_bool(value):
+    if type(value) is not bool:
+        raise vol.Invalid("Expected a boolean")
+    return value
+
+
 async def async_setup(hass, config):
     """Register the action even if no entries are loaded."""
     hass.data.setdefault(DOMAIN, {})
@@ -33,7 +39,9 @@ async def async_setup(hass, config):
         if sensor is None:
             raise ServiceValidationError("Select a loaded Tuya Feeder meal-plan sensor")
         response = await sensor.set_schedule(
-            call.data["expected_revision"], call.data["meals"]
+            call.data["expected_revision"],
+            call.data["meals"],
+            call.data.get("acknowledge_restored_snapshot", False),
         )
         if getattr(call, "return_response", False):
             return response
@@ -56,9 +64,43 @@ async def async_setup(hass, config):
                 vol.Required("entity_id"): cv.entity_id,
                 vol.Required("expected_revision"): object,
                 vol.Required("meals"): object,
+                vol.Optional(
+                    "acknowledge_restored_snapshot", default=False
+                ): strict_bool,
             }
         ),
         **kwargs,
+    )
+
+    async def import_snapshot(call):
+        if call.context.user_id:
+            user = await hass.auth.async_get_user(call.context.user_id)
+            if user is None or not user.is_admin:
+                raise ServiceValidationError(
+                    "Snapshot import requires an administrator"
+                )
+        sensor = next(
+            (
+                s
+                for s in hass.data[DOMAIN].values()
+                if s.entity_id == call.data["entity_id"]
+            ),
+            None,
+        )
+        if sensor is None:
+            raise ServiceValidationError("Select a loaded Tuya Feeder meal-plan sensor")
+        await sensor.import_snapshot(call.data["source_entity_id"])
+
+    hass.services.async_register(
+        DOMAIN,
+        "import_snapshot",
+        import_snapshot,
+        schema=vol.Schema(
+            {
+                vol.Required("entity_id"): cv.entity_id,
+                vol.Required("source_entity_id"): cv.entity_id,
+            }
+        ),
     )
     return True
 

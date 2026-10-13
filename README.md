@@ -13,7 +13,7 @@ A local Home Assistant integration for **FT-11W feeder schedules**. It displays 
 - Maximum ten meals (disabled records count), portions 1–60. Times use the feeder's existing local clock; this integration does not set its timezone or daylight-saving behavior. Portions are not grams.
 - **Normal LAN GET omits DP1.** This sensor is a *last locally reported snapshot*, not an active schedule query. A recent timestamp does not guarantee an external app has not changed the plan. There is no fake refresh/query button.
 - Revisions prevent concurrent/stale edits **within the observed HA history**; they cannot guarantee protection against unreported external-app edits. Before using the writer, understand that a complete replacement may overwrite unobserved changes.
-- No unknown record is silently dropped. Unknown, malformed, partial, or unsupported plans disable writing. An initial unknown sensor remains unknown until a genuine DP1 event is received; this release has no cloud/bootstrap fallback and does not write a schedule to discover it.
+- No unknown record is silently dropped. Unknown, malformed, partial, or unsupported plans disable writing. An initial unknown sensor remains unknown until a genuine DP1 event or an explicit historical import. Historical import never claims a new receipt; there is no cloud fallback and no schedule write to discover a plan.
 - A Home Assistant bus event is trusted local-process evidence, not cryptographic attestation: privileged users/integrations can fabricate events. Restrict HA access accordingly.
 
 ## Install with HACS
@@ -30,7 +30,7 @@ Manual installation: copy **only** `custom_components/tuya_feeder` into your HA 
 
 ## Sensor/API contract
 
-Domain: `tuya_feeder`. The sensor state is meal count or `unknown`, never a claim that the feeder is currently executing a schedule. It is nonpolling and restores its own private `.storage` snapshot. Restored snapshots remain read only until a new genuine valid local report arrives, even when their saved timestamp looks recent. Use integration and card **v0.1.1 or newer together**.
+Domain: `tuya_feeder`. The sensor state is meal count or `unknown`, never a claim that the feeder is currently executing a schedule. It is nonpolling and restores its own private `.storage` snapshot. Restored snapshots retain historical provenance. By default they cannot write; each explicit replacement requires `acknowledge_restored_snapshot: true` at the exact saved revision. This permits editing a known historical baseline without pretending it is fresh. Unknown, malformed, uncertain, disconnected and unsupported plans still fail closed. Use integration **v0.1.2+** and card **v0.1.3+** for historical editing.
 
 | Attribute | Meaning |
 | --- | --- |
@@ -46,6 +46,14 @@ Domain: `tuya_feeder`. The sensor state is meal count or `unknown`, never a clai
 | `supported_days_mode` | `every_day` |
 | `max_meals` / `max_portions` | `10` / `60` |
 | `warning` | External-app stale-cache limitation |
+
+### Historical import (v0.1.2+)
+
+Choose an existing passive sensor in the integration Options selector. Selection does not import, query or write. Then an administrator explicitly calls `tuya_feeder.import_snapshot` with `entity_id` and `source_entity_id`. The source must exactly match `historical_snapshot_entity_id` in options and provide canonical every-day `raw_plan`, the original timezone-aware `received_at` (not an HA update time), `source: LocalTuya LAN DP1 report`, and `read_only: true` (the passive template string `True` is also supported). HA metadata is manually trusted, not cryptographic provenance. Arbitrary raw service payloads are not accepted.
+
+Only a never-initialized, error-free sensor can import. It persists the complete plan, original timestamp and `imported_from`, starts revision 1 and publishes `snapshot_source: restored`. It fires no received event and dispatches no feeder call. `supports_schedule_write` stays false; `supports_restored_schedule_write` and `requires_restored_snapshot_acknowledgement` advertise the conditional historical path. Restarts preserve this distinction. No automatic import occurs.
+
+The card shows the saved date and warns that external app changes could be overwritten before Confirm Save sends `acknowledge_restored_snapshot: true`. The backend requires a strict boolean, valid revision and all existing transport/uncertainty gates. Only successful handler completion and a newer genuine matching inbound DP1 receipt can confirm a replacement.
 
 ### `tuya_feeder.set_schedule`
 
