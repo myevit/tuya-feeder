@@ -448,14 +448,12 @@ async def test_malformed_report_metadata_survives_restore(hass, feeder):
     transport.assert_not_called()
 
 
-async def test_config_entry_only_schema_rejects_yaml():
-    import voluptuous as vol
-
+async def test_config_entry_only_schema_warns_on_unsupported_yaml(caplog):
     from custom_components.tuya_feeder import CONFIG_SCHEMA
 
     assert CONFIG_SCHEMA({}) == {}
-    with pytest.raises(vol.Invalid):
-        CONFIG_SCHEMA({"tuya_feeder": {"device_id": "synthetic_feeder"}})
+    CONFIG_SCHEMA({"tuya_feeder": {"device_id": "synthetic_feeder"}})
+    assert "does not support YAML setup" in caplog.text
 
 
 async def test_transport_audit_requires_exact_version_and_origin(hass):
