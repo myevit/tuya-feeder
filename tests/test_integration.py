@@ -448,6 +448,16 @@ async def test_malformed_report_metadata_survives_restore(hass, feeder):
     transport.assert_not_called()
 
 
+async def test_config_entry_only_schema_rejects_yaml():
+    import voluptuous as vol
+
+    from custom_components.tuya_feeder import CONFIG_SCHEMA
+
+    assert CONFIG_SCHEMA({}) == {}
+    with pytest.raises(vol.Invalid):
+        CONFIG_SCHEMA({"tuya_feeder": {"device_id": "synthetic_feeder"}})
+
+
 async def test_transport_audit_requires_exact_version_and_origin(hass):
     from custom_components.tuya_feeder.transport import audited_transport
 

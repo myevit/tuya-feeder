@@ -12,6 +12,7 @@ from .sensor import MealPlanSensor
 from .transport import audited_transport, configured_devices
 
 DOMAIN = "tuya_feeder"
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 PLATFORMS = [Platform.SENSOR]
 
 
