@@ -84,6 +84,14 @@ Timeout or transport failure returns `confirmed: false` with `unconfirmed_timeou
 
 Invalid data, stale revision, unavailable/incompatible transport, wrong entity, pending operation, unknown snapshot, or uncertainty raises a service validation error and performs **no write**. Booleans are not accepted as integers. No coercion from numeric strings, loose times, or truthy enabled values occurs.
 
+## Passive last feeding activity (v0.2.1)
+
+`last_feed_at` is a persisted timezone-aware receipt timestamp for the latest observed genuine local DP4 inactive→`feeding` transition, independent of command origin. `last_feed_source` is `local_dp4_feeding_edge`, or null when unknown. Scheduled, physical-button, app and HA feeding all share this local device activity channel; no extra socket, cloud query or actuation is introduced.
+
+For the audited LocalTuya version, single-DP native frames generate `localtuya_device_dp_triggered`; matching status-change events carry the genuine old/new cache. A single-DP DP4 feeding edge from standby/done is dated with the bus event receipt time. Multi-DP initial GET/status snapshots can establish current state but cannot date a new feeding. Cached DP14 portions, duplicate feeding/DP14 reports, DP1 schedule writes, helper changes and command ACKs never create a feeding timestamp. Reconnect/restart snapshots do not advance it. Existing manual-command confirmation and uncertainty reservation remain separate.
+
+The date persists in the existing per-device feed safety store and restores without restoring an active feeding cycle. No old history date is invented on upgrade: unknown stays null until a genuine local transition is observed. HA/local-transport downtime can miss feeding activity. A local feeding indication is not independent proof of food delivery.
+
 ## One-meal actions and manual feeding (v0.2.0)
 
 [`docs/service-contract.json`](docs/service-contract.json) is the shared card contract.

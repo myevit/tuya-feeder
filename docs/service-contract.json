@@ -6,7 +6,7 @@
   "add_meal": {"entity_id":"sensor.synthetic_meal_plan","expected_revision":1,"meal":{"days":["monday","tuesday","wednesday","thursday","friday","saturday","sunday"],"time":"12:30","portions":3,"enabled":true},"acknowledge_restored_snapshot":false},
   "delete_meal": {"entity_id":"sensor.synthetic_meal_plan","expected_revision":1,"meal_index":0,"acknowledge_restored_snapshot":false},
   "feed": {"entity_id":"sensor.synthetic_meal_plan","portions":3},
-  "feed_attributes": ["supports_manual_feed","feeding_pending","feeding_state","feeding_error","feeding_requested_at","feeding_reported_at","feeding_portions","feeding_observed_at"],
+  "feed_attributes": ["supports_manual_feed","feeding_pending","feeding_state","feeding_error","feeding_requested_at","feeding_reported_at","feeding_portions","feeding_observed_at","last_feed_at","last_feed_source"],
   "feeding_states": ["idle","command_pending","feeding","reported","unknown"],
   "feed_confirmation": "User must explicitly confirm in card. Selecting the persistent portions helper must NEVER actuate. Only a fresh native DP4 feeding report permits Feeding label; DP14 following DP4 reports completion, not independently verified physical delivery. Unknown blocks retry.",
   "schedule_confirmation": "Actual handler completion plus matching new revision/receipt and pending=false. ACK is not confirmation. Single meal UX uses atomic merge and full DP1 packet; other records byte-identical.",

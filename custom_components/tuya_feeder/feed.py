@@ -95,6 +95,9 @@ class ManualFeed:
         self.observed_at = None
         self.reported_at = None
         self.portions = None
+        self.last_feed_at = None
+        self._activity_state = None
+        self._activity_interface = None
         self._sent = False
         self._waiter = None
         self._unsubs = []
@@ -103,6 +106,18 @@ class ManualFeed:
     async def start(self):
         saved = await self.store.async_load()
         if saved is not None:
+            timestamp = saved.get("last_feed_at")
+            parsed = (
+                dt_util.parse_datetime(timestamp)
+                if isinstance(timestamp, str)
+                else None
+            )
+            if (
+                parsed is not None
+                and parsed.tzinfo is not None
+                and parsed <= dt_util.utcnow()
+            ):
+                self.last_feed_at = parsed.isoformat()
             # Never resume an interrupted command or trust a restored feeding flag.
             self.uncertain = saved.get("uncertain", True) is not False
             self.state = "unknown" if self.uncertain else "idle"
@@ -118,7 +133,9 @@ class ManualFeed:
 
     async def persist(self):
         async with self._persist_lock:
-            await self.store.async_save({"uncertain": self.uncertain})
+            await self.store.async_save(
+                {"uncertain": self.uncertain, "last_feed_at": self.last_feed_at}
+            )
 
     @property
     def attributes(self):
@@ -135,13 +152,60 @@ class ManualFeed:
             "feeding_observed_at": self.observed_at,
             "feeding_reported_at": self.reported_at,
             "feeding_portions": self.portions,
+            "last_feed_at": self.last_feed_at,
+            "last_feed_source": "local_dp4_feeding_edge" if self.last_feed_at else None,
         }
+
+    @callback
+    def _observe_activity(self, event):
+        """Independent of command origin; snapshots and DP14 cannot date a feed.
+
+        This audited device reports DP4 transitions in single-DP native frames.
+        Multi-DP GET/status snapshots may prime an inactive baseline, but may
+        never claim a new feeding time (even if they contain cached DP14).
+        """
+        if not manual_capability(self.sensor) or not genuine_reports_allowed(
+            self.sensor.hass, self.sensor.entry, self.sensor.audited
+        ):
+            return
+        device = runtime_device(self.sensor.hass, self.sensor.entry)
+        interface = getattr(device, "_interface", None)
+        if interface is not self._activity_interface:
+            self._activity_interface = interface
+            self._activity_state = None
+        if event.event_type == "localtuya_device_dp_triggered":
+            if str(event.data.get("dp")) != "4":
+                return
+            state = event.data.get("value")
+            previous = self._activity_state
+            if previous is not None or state != "feeding":
+                self._activity_state = state
+            if state == "feeding" and previous in ("standby", "done"):
+                self.last_feed_at = event.time_fired.isoformat()
+                self.sensor.hass.async_create_task(self.persist())
+        else:
+            dps = getattr(interface, "dispatched_dps", {})
+            if isinstance(dps, dict) and set(dps) == {"4"}:
+                state = dps["4"]
+                previous = event.data.get("old_status", {}).get("4")
+                if (
+                    state == "feeding"
+                    and previous in ("standby", "done")
+                    and self._activity_state is None
+                ):
+                    self.last_feed_at = event.time_fired.isoformat()
+                    self.sensor.hass.async_create_task(self.persist())
+                self._activity_state = state
+            elif isinstance(dps, dict) and len(dps) > 1 and "4" in dps:
+                # A full initial GET is a state snapshot, not a feeding event.
+                self._activity_state = dps["4"]
 
     @callback
     def received(self, event):
         data = event.data
         if data.get("device_id") != self.sensor.entry.data["device_id"]:
             return
+        self._observe_activity(event)
         # Availability/safety changes must update the card even without an
         # outstanding command; otherwise an initially offline feeder stays
         # disabled forever. These reports never start a feed or confirm one.
