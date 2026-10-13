@@ -9,6 +9,7 @@ from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
+from .feed import ManualFeed
 from .plan import MAX_MEALS, MAX_PORTIONS, decode, encode
 from .transport import can_send, genuine_reports_allowed
 
@@ -49,6 +50,10 @@ class MealPlanSensor(SensorEntity):
         self._waiter = None
         self._unsub = None
         self._save_lock = asyncio.Lock()
+        self._action_lock = asyncio.Lock()
+        self.feed_confirm_timeout = 120.0
+        self.feed_guard_delay = 2.0
+        self.manual = ManualFeed(self)
 
     async def start(self):
         """Restore only our previously received private snapshot, then listen."""
@@ -80,6 +85,7 @@ class MealPlanSensor(SensorEntity):
                 self.imported_from = saved.get("imported_from")
             except (KeyError, TypeError, ValueError):
                 self.error = "invalid_stored_snapshot"
+        await self.manual.start()
         self._unsub = self.hass.bus.async_listen(
             "localtuya_device_dp_triggered", self._received
         )
@@ -201,6 +207,7 @@ class MealPlanSensor(SensorEntity):
     @property
     def extra_state_attributes(self):
         return {
+            **self.manual.attributes,
             "meals": deepcopy(self.meals) if self.meals is not None else [],
             "revision": self.revision,
             "last_received_at": self.last_received_at,
@@ -213,6 +220,8 @@ class MealPlanSensor(SensorEntity):
             and self.snapshot_source == "restored"
             and not self.uncertain
             and not self.error
+            and not self._action_lock.locked()
+            and not self.manual.uncertain
             and can_send(self.hass, self.entry, self.audited),
             "schedule_valid": self.meals is not None,
             "pending": self.pending,
@@ -220,6 +229,8 @@ class MealPlanSensor(SensorEntity):
             "supports_schedule_write": self.meals is not None
             and self.snapshot_source == "received"
             and not self.uncertain
+            and not self._action_lock.locked()
+            and not self.manual.uncertain
             and can_send(self.hass, self.entry, self.audited),
             "supported_days_mode": "every_day",
             "max_meals": MAX_MEALS,
@@ -228,6 +239,83 @@ class MealPlanSensor(SensorEntity):
         }
 
     async def set_schedule(
+        self, expected_revision, meals, acknowledge_restored_snapshot=False
+    ):
+        """Reject busy operations, rather than queueing stale user requests."""
+        if self._action_lock.locked() or self.manual.uncertain:
+            raise ServiceValidationError(
+                "A feeder action is already pending or its result is unknown"
+            )
+        try:
+            async with self._action_lock:
+                return await self._set_schedule(
+                    expected_revision, meals, acknowledge_restored_snapshot
+                )
+        finally:
+            self._publish()
+
+    async def meal_action(
+        self,
+        action,
+        expected_revision,
+        meal_index=None,
+        meal=None,
+        acknowledge_restored_snapshot=False,
+    ):
+        try:
+            return await self._meal_action(
+                action,
+                expected_revision,
+                meal_index,
+                meal,
+                acknowledge_restored_snapshot,
+            )
+        finally:
+            self._publish()
+
+    async def _meal_action(
+        self,
+        action,
+        expected_revision,
+        meal_index=None,
+        meal=None,
+        acknowledge_restored_snapshot=False,
+    ):
+        """Merge under the device action lock; no await before snapshot validation."""
+        if self._action_lock.locked() or self.manual.uncertain:
+            raise ServiceValidationError(
+                "A feeder action is already pending or its result is unknown"
+            )
+        async with self._action_lock:
+            if type(expected_revision) is not int or expected_revision != self.revision:
+                raise ServiceValidationError(
+                    "Stale expected_revision; reload the last reported plan"
+                )
+            if self.meals is None:
+                raise ServiceValidationError("No known valid meal plan")
+            meals = deepcopy(self.meals)
+            if action in ("update_meal", "delete_meal"):
+                if type(meal_index) is not int or not 0 <= meal_index < len(meals):
+                    raise ServiceValidationError(
+                        "meal_index must identify a current meal"
+                    )
+            if action == "update_meal":
+                meals[meal_index] = meal
+            elif action == "add_meal":
+                meals.append(meal)
+            elif action == "delete_meal":
+                if len(meals) == 1:
+                    raise ServiceValidationError(
+                        "The final meal cannot be removed yet; turn it off instead"
+                    )
+                del meals[meal_index]
+            else:
+                raise ServiceValidationError("Unsupported meal action")
+            return await self._set_schedule(
+                expected_revision, meals, acknowledge_restored_snapshot
+            )
+
+    async def _set_schedule(
         self, expected_revision, meals, acknowledge_restored_snapshot=False
     ):
         """One full-plan DP1 write, never retry or claim a sent value as received."""
@@ -323,7 +411,14 @@ class MealPlanSensor(SensorEntity):
             self._publish()
         return {"confirmed": confirmed, "revision": self.revision, "error": self.error}
 
+    async def feed(self, portions):
+        try:
+            return await self.manual.execute(portions)
+        finally:
+            self._publish()
+
     async def stop(self):
+        await self.manual.stop()
         if self._unsub is not None:
             self._unsub()
             self._unsub = None

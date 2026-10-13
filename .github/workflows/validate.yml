@@ -52,6 +52,6 @@ jobs:
       - run: npm ci && npm run build && npx playwright install --with-deps chromium
         working-directory: .contract-card
       - run: git rev-parse HEAD && git -C .contract-card rev-parse HEAD
-      - run: pytest -q tests/test_card_contract.py
+      - run: pytest -q tests/test_card_contract.py tests/test_card_meal_feed_contract.py
         env:
           TUYA_FEEDER_CARD_DIR: ${{ github.workspace }}/.contract-card

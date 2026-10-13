@@ -72,6 +72,72 @@ async def async_setup(hass, config):
         **kwargs,
     )
 
+    async def meal_action(call):
+        sensor = next(
+            (
+                s
+                for s in hass.data[DOMAIN].values()
+                if s.entity_id == call.data["entity_id"]
+            ),
+            None,
+        )
+        if sensor is None:
+            raise ServiceValidationError("Select a loaded Tuya Feeder meal-plan sensor")
+        response = await sensor.meal_action(
+            call.service,
+            call.data["expected_revision"],
+            call.data.get("meal_index"),
+            call.data.get("meal"),
+            call.data.get("acknowledge_restored_snapshot", False),
+        )
+        if getattr(call, "return_response", False):
+            return response
+        if response["error"] not in (None, "unchanged_no_write"):
+            raise ServiceValidationError(response["error"])
+        return None
+
+    for action in ("update_meal", "add_meal", "delete_meal"):
+        schema = {
+            vol.Required("entity_id"): cv.entity_id,
+            vol.Required("expected_revision"): object,
+            vol.Optional("acknowledge_restored_snapshot", default=False): strict_bool,
+        }
+        if action != "add_meal":
+            schema[vol.Required("meal_index")] = object
+        if action != "delete_meal":
+            schema[vol.Required("meal")] = object
+        hass.services.async_register(
+            DOMAIN, action, meal_action, schema=vol.Schema(schema), **kwargs
+        )
+
+    async def feed(call):
+        sensor = next(
+            (
+                s
+                for s in hass.data[DOMAIN].values()
+                if s.entity_id == call.data["entity_id"]
+            ),
+            None,
+        )
+        if sensor is None:
+            raise ServiceValidationError("Select a loaded Tuya Feeder meal-plan sensor")
+        response = await sensor.feed(call.data["portions"])
+        if getattr(call, "return_response", False):
+            return response
+        if response["error"]:
+            raise ServiceValidationError(response["error"])
+        return None
+
+    hass.services.async_register(
+        DOMAIN,
+        "feed",
+        feed,
+        schema=vol.Schema(
+            {vol.Required("entity_id"): cv.entity_id, vol.Required("portions"): object}
+        ),
+        **kwargs,
+    )
+
     async def import_snapshot(call):
         if call.context.user_id:
             user = await hass.auth.async_get_user(call.context.user_id)
@@ -128,7 +194,9 @@ async def async_setup_entry(hass, entry):
 async def async_unload_entry(hass, entry):
     """Remove our subscription/entity, leave LocalTuya and feeder untouched."""
     sensor = hass.data[DOMAIN].get(entry.entry_id)
-    if sensor is not None and sensor.pending:
+    if sensor is not None and (
+        sensor.pending or sensor.manual.pending or sensor._action_lock.locked()
+    ):
         return False
     if await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         if sensor is not None:

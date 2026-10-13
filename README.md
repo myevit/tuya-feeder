@@ -4,7 +4,7 @@
 
 A local Home Assistant integration for **FT-11W feeder schedules**. It displays the last genuinely received DP1 meal plan and provides a validated, complete-plan writer through an **existing LocalTuya connection**.
 
-**This is not an immediate feeding integration.** It exposes no feeding commands, creates no recurring HA feeding automations, opens no additional socket, and makes no cloud calls. The feeder continues executing its stored schedules without Home Assistant or Internet access.
+**No automatic feeding:** setup, restore, selecting portions and editing drafts never actuate. Version 0.2.0 adds explicit one-meal Save/Add/Delete actions and a separately confirmed manual-feed action for the exact audited Titan WIFI model. It creates no recurring HA feeding automations, opens no additional socket, and makes no cloud calls. The feeder continues executing its stored schedules without Home Assistant or Internet access.
 
 ## Compatibility and important limits
 
@@ -84,6 +84,29 @@ Timeout or transport failure returns `confirmed: false` with `unconfirmed_timeou
 
 Invalid data, stale revision, unavailable/incompatible transport, wrong entity, pending operation, unknown snapshot, or uncertainty raises a service validation error and performs **no write**. Booleans are not accepted as integers. No coercion from numeric strings, loose times, or truthy enabled values occurs.
 
+## One-meal actions and manual feeding (v0.2.0)
+
+[`docs/service-contract.json`](docs/service-contract.json) is the shared card contract.
+
+- `update_meal`: `{entity_id, expected_revision, meal_index, meal}`.
+- `add_meal`: `{entity_id, expected_revision, meal}`.
+- `delete_meal`: `{entity_id, expected_revision, meal_index}`.
+- Historical actions additionally require `acknowledge_restored_snapshot: true` for that exact revision.
+
+Indices and revisions are strict integers. Merge happens inside the shared device action lock against the complete known snapshot. The protocol still requires **one full DP1 packet**, not a nonexistent per-record device command. Untouched five-byte records remain byte-identical, in order; stale indices, unknown/mixed-day plans and busy requests fail closed. Last-meal deletion is blocked because empty firmware packet behavior is not established; turn off the final meal instead. The legacy full-plan `set_schedule` API is retained unchanged, including its explicit empty-list codec; this is not evidence that empty-packet firmware behavior has been physically tested.
+
+`tuya_feeder.feed` takes `{entity_id, portions}` and is a real immediate actuation request. The card must obtain explicit confirmation. Keep a **local persistent portions helper** for selection; never use LocalTuya's DP3 number entity as a selector. Selecting a count must not issue any feeder command.
+
+Manual capability is limited to configured model `M&C Smart Feeder Titan WIFI`, protocol 3.5, exact configured `meal_plan`/`quick_feed`/`manual_feed`/`feed_state`/`fault`/`feed_report`/`power_mode` DP mapping, unscaled integer 1–60, and audited LocalTuya 2026.07.0. Connected, negotiated native transport, standby/done, zero fault bitmap on **DP13 (not DP10, which is battery percentage)**, supported mains power mode and no pending LocalTuya command are required. These caches are conservative safety preconditions, **not** completion evidence.
+
+A request writes **DP3 once**, without DP2/`quick_feed`. Tuya defines these as two separate feeding instructions; chaining both may actuate twice and is not required by the standard manual-feed instruction. The device-specific schema extends portions to 60. Prior two-step behavior is not proof of either one or two physical dispenses, and no physical test is implied here. A two-second minimum guard is retained, but no second command follows it.
+
+The integration reuses LocalTuya's existing negotiated protocol `exchange_quick(..., recv_retries=0)` because the regular `exchange()` has a resend branch. No new socket, reconnect, command retry or cloud credential access occurs. Commands and schedule operations share a reject-not-queue lock. A transport return/ACK does not confirm feeding. Only a genuinely incoming DP4 `feeding` report after the command permits `feeding_state: feeding`, and a subsequent native DP14 matching the requested portions permits `reported`. This is reported device evidence, not independently measured delivery, and the protocol provides no command correlation ID.
+
+Attributes: `manual_feed_capability`, `supports_manual_feed`, `feeding_pending`, `feeding_state` (`idle`, `command_pending`, `feeding`, `reported`, `unknown`), `feeding_error`, `feeding_requested_at`, `feeding_observed_at`, `feeding_reported_at`, `feeding_portions`. Optional action response includes `command_attempted`, `reported`, `state`, `error`, `requested_at`, `reported_at`. An attempt does not assert that a frame reached the device.
+
+The receipt deadline is 120 seconds. Timeout, cancellation or transport failure is unknown: it **may have fed; do not retry**. A crash-safe uncertainty reservation persists across reload/restart, and does not get cleared by cached standby or ACK. In the same runtime a later genuine feeding/report pair may resolve it; after restart unknown remains blocked for operator investigation rather than attributing an unrelated scheduled feed to an old command. Removing the entry is not a recommended retry strategy. Existing helpers, buttons, scripts and automations are not modified by installation; migration away from a legacy two-instruction script must be an explicit dashboard/config change.
+
 ## Preservation / removal
 
 Installing this integration does not alter existing LocalTuya entities, custom passive sensors, schedules, disabled records, dashboards, or automations. It never writes automatically on setup, restore, polling, reload, or unload. Explicit removal deletes only its own private snapshot. Config-entry removal/recreation starts a new revision history; clients must reload rather than reuse old revisions.
@@ -105,6 +128,8 @@ The tests use actual Home Assistant config entries, entity platforms, action reg
 
 ## Sources / provenance
 
+- [Tuya pet-feeder standard instruction set](https://developer.tuya.com/en/docs/iot/f?id=K9gf468bl11rj): `manual_feed` integer manual feeding and `quick_feed` boolean one-click feeding are distinct instructions; the exact device schema, not generic maximum 12, determines this model's maximum 60.
+- [Audited LocalTuya one-shot protocol](https://github.com/xZetsubou/hass-localtuya/blob/2026.7.0/custom_components/localtuya/core/pytuya/__init__.py): `exchange_quick` explicitly never retries sending.
 - [HA manifests](https://developers.home-assistant.io/docs/creating_integration_manifest/)
 - [HA config flows](https://developers.home-assistant.io/docs/config_entries_config_flow_handler/)
 - [HA service actions / optional responses](https://developers.home-assistant.io/docs/dev_101_services/)

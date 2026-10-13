@@ -18,6 +18,45 @@
     }
   },
   "services": {
+    "feed": {
+      "name": "Feed now",
+      "description": "Immediately sends one explicitly confirmed dose. Audited Titan WIFI only: one DP3 command, no DP2, no automatic retry. Incoming feeding/report evidence is required; unknown outcomes block retry.",
+      "fields": {
+        "entity_id": {"name": "Meal-plan sensor", "description": "One loaded Tuya Feeder sensor."},
+        "portions": {"name": "Portions", "description": "Strict integer 1–60. Choosing a helper value alone never dispenses."}
+      }
+    },
+    "update_meal": {
+      "name": "Save one meal",
+      "description": "Atomically update one meal in the known plan, preserving other records. One complete DP1 packet requires a matching new native receipt.",
+      "fields": {
+        "entity_id": {"name": "Meal-plan sensor", "description": "One loaded Tuya Feeder sensor."},
+        "expected_revision": {"name": "Expected revision", "description": "Exact integer revision of the last known plan."},
+        "meal_index": {"name": "Meal index", "description": "Strict zero-based integer index at the expected revision."},
+        "meal": {"name": "Meal", "description": "Exactly days (all seven lowercase weekdays), time (HH:MM), portions (integer 1–60), enabled (boolean)."},
+        "acknowledge_restored_snapshot": {"name": "Accept historical baseline", "description": "Explicit true permits this write from a saved snapshot; external app changes could be overwritten."}
+      }
+    },
+    "add_meal": {
+      "name": "Add one meal",
+      "description": "Atomically append one meal, preserving existing records. Maximum ten records. Sends one complete DP1 packet, requiring a new native receipt.",
+      "fields": {
+        "entity_id": {"name": "Meal-plan sensor", "description": "One loaded Tuya Feeder sensor."},
+        "expected_revision": {"name": "Expected revision", "description": "Exact integer revision of the last known plan."},
+        "meal": {"name": "Meal", "description": "Exactly days (all seven lowercase weekdays), time (HH:MM), portions (integer 1–60), enabled (boolean)."},
+        "acknowledge_restored_snapshot": {"name": "Accept historical baseline", "description": "Explicit true permits this write from a saved snapshot; external app changes could be overwritten."}
+      }
+    },
+    "delete_meal": {
+      "name": "Delete one meal",
+      "description": "Atomically delete one indexed meal, preserving other records. Final-meal deletion is blocked; turn it off instead. Requires a matching new native receipt.",
+      "fields": {
+        "entity_id": {"name": "Meal-plan sensor", "description": "One loaded Tuya Feeder sensor."},
+        "expected_revision": {"name": "Expected revision", "description": "Exact integer revision of the last known plan."},
+        "meal_index": {"name": "Meal index", "description": "Strict zero-based integer index at the expected revision."},
+        "acknowledge_restored_snapshot": {"name": "Accept historical baseline", "description": "Explicit true permits this write from a saved snapshot; external app changes could be overwritten."}
+      }
+    },
     "set_schedule": {
       "name": "Set complete schedule",
       "description": "Replace DP1 with a validated every-day plan. Existing meals must all be included. Sends once, waits for a matching locally received DP1 report, and never retries automatically. Does not dispense food immediately.",

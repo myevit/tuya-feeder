@@ -70,11 +70,12 @@ async def test_actual_card_save_backend_report_contract(hass, feeder, browser_br
     assert calls == [
         [
             "tuya_feeder",
-            "set_schedule",
+            "update_meal",
             {
                 "entity_id": sensor.entity_id,
                 "expected_revision": 1,
-                "meals": CHANGED,
+                "meal_index": 0,
+                "meal": CHANGED[0],
             },
         ]
     ]
@@ -101,6 +102,7 @@ async def test_actual_card_save_backend_report_contract(hass, feeder, browser_br
         final["attributes"]["last_received_at"]
         != initial["attributes"]["last_received_at"]
     )
+    await browser_bridge("service_result", result=result)
     await browser_bridge("state", state=final)
     await browser_bridge("confirmed")
     assert len(await browser_bridge("editable")) == 1
@@ -191,11 +193,12 @@ async def test_imported_baseline_card_to_actual_service_contract(
     assert calls == [
         [
             "tuya_feeder",
-            "set_schedule",
+            "update_meal",
             {
                 "entity_id": sensor.entity_id,
                 "expected_revision": 1,
-                "meals": CHANGED,
+                "meal_index": 0,
+                "meal": CHANGED[0],
                 "acknowledge_restored_snapshot": True,
             },
         ]
@@ -216,6 +219,7 @@ async def test_imported_baseline_card_to_actual_service_contract(
     final = state(hass, sensor)
     assert final["attributes"]["snapshot_source"] == "received"
     assert final["attributes"]["last_received_at"] != STAMP
+    await browser_bridge("service_result", result=result)
     await browser_bridge("state", state=final)
     await browser_bridge("confirmed")
     transport.assert_called_once()

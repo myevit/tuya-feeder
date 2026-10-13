@@ -34,3 +34,101 @@ import_snapshot:
       selector:
         entity:
           domain: sensor
+update_meal:
+  fields:
+    entity_id:
+      required: true
+      selector:
+        entity:
+          integration: tuya_feeder
+          domain: sensor
+    expected_revision:
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 2147483647
+          mode: box
+    meal_index:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 9
+          mode: box
+    meal:
+      required: true
+      selector:
+        object:
+    acknowledge_restored_snapshot:
+      required: false
+      selector:
+        boolean:
+
+add_meal:
+  fields:
+    entity_id:
+      required: true
+      selector:
+        entity:
+          integration: tuya_feeder
+          domain: sensor
+    expected_revision:
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 2147483647
+          mode: box
+    meal:
+      required: true
+      selector:
+        object:
+    acknowledge_restored_snapshot:
+      required: false
+      selector:
+        boolean:
+
+delete_meal:
+  fields:
+    entity_id:
+      required: true
+      selector:
+        entity:
+          integration: tuya_feeder
+          domain: sensor
+    expected_revision:
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 2147483647
+          mode: box
+    meal_index:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 9
+          mode: box
+    acknowledge_restored_snapshot:
+      required: false
+      selector:
+        boolean:
+
+feed:
+  fields:
+    entity_id:
+      required: true
+      selector:
+        entity:
+          integration: tuya_feeder
+          domain: sensor
+    portions:
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 60
+          step: 1
+          mode: box
